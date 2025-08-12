@@ -4,6 +4,7 @@ import torch
 import subprocess
 import time
 import json
+from utils.util_func import *
 
 class CombineVideosFromFolder:
     def __init__(self):
@@ -13,16 +14,18 @@ class CombineVideosFromFolder:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "video_path": ("STRING", {"default": ""}),
-                "audio_path": ("STRING", {"default": ""}),
+                "input_video_path": ("STRING", {"default": ""}),
+                "input_audio_path": ("STRING", {"default": ""}),
                 "output_path": ("STRING", {"default": ""}),
+                "input_video_format": (["mp4", "mov", "avi", "mkv"], {"default": "mp4"}),
+                "input_audio_format": (["wav", "mp3", "m4a", "flac"], {"default": "wav"}),
+                "output_filename": ("STRING", {"default": "output"}),
+                "output_video_format": (["mp4", "mov", "avi", "mkv"], {"default": "mp4"}),
+                "output_audio_format": (["wav", "mp3", "m4a", "flac"], {"default": "wav"}),
                 "output_duration": ("INT", {"default": 10, "min": 1, "max": 1000}),
                 "output_fps": ("INT", {"default": 30, "min": 1, "max": 100}),
                 "output_quality": ("INT", {"default": 10, "min": 1, "max": 100}),
-                "output_bitrate": ("INT", {"default": 1000, "min": 100, "max": 10000}),
-                "input_format": ("STRING", {"default": "mp4", "options": ["mp4", "mov", "avi", "mkv"]}),
-                "output_filename": ("STRING", {"default": "output.mp4"}),
-                "output_format": ("STRING", {"default": "mp4", "options": ["mp4", "mov", "avi", "mkv"]}),
+                "output_bitrate": ("INT", {"default": 1000, "min": 100, "max": 10000})
             },
         }
     
@@ -32,27 +35,75 @@ class CombineVideosFromFolder:
     CATEGORY = "Combine Videos And Subtitles"
     OUTPUT_NODE = True
     
-    def combine_videos_from_folder(self, video_path, audio_path, output_path, output_duration, output_fps, output_quality, output_bitrate, input_format, output_filename, output_format):
+    def combine_videos_from_folder(self, input_video_path, input_audio_path, output_path, input_video_format, input_audio_format, output_filename, output_video_format, output_audio_format, output_duration, output_fps, output_quality, output_bitrate):
         try:
-            video_path = os.path.abspath(video_path).strip()
-            audio_path = os.path.abspath(audio_path).strip()
-            output_path = os.path.abspath(output_path).strip()
-            output_filename = os.path.abspath(output_filename).strip()
-            output_format = os.path.abspath(output_format).strip()
-            input_format = os.path.abspath(input_format).strip()
+            input_video_path = os.path.abspath(input_video_path).strip()
+            input_audio_path = os.path.abspath(input_audio_path).strip()
+
+            # 检查input_video_path是否存在
+            if not check_path_exists(input_video_path):
+                raise ValueError(f"Input video path does not exist: {input_video_path}")
+            # 检查input_video_path是否为目录
+            if not check_path_is_dir(input_video_path):
+                raise ValueError(f"Input video path is not a directory: {input_video_path}")
+            
+            # 获取input_video_path下的所有文件
+            input_video_files = get_files(input_video_path, input_video_format)
+            if len(input_video_files) == 0:
+                raise ValueError(f"No video files found in the folder: {input_video_path}")
+
+            # 如果用户提供了input_audio_path，则检查input_audio_path是否存在，是否是目录
+            input_audio_files = []
+            if input_audio_path != "":
+                if not check_path_exists(input_audio_path):
+                    raise ValueError(f"Input audio path does not exist: {input_audio_path}")
+                if not check_path_is_dir(input_audio_path):
+                    raise ValueError(f"Input audio path is not a directory: {input_audio_path}")
+                input_audio_files = get_files(input_audio_path, input_audio_format)
+                if len(input_audio_files) == 0:
+                    raise ValueError(f"No audio files found in the folder: {input_audio_path}")
+
+
+            # 检查output_path是否存在，如果不存在则创建
+            if not check_path_exists(output_path):
+                os.makedirs(output_path)
+
+            video_filelist_filenames = os.path.join(output_path, f"input_video_filelist.txt")
+            with open(video_filelist_filenames, "w") as f:
+                for video_file in input_video_files:
+                    f.write(video_file + "\n")
+
+            if len(input_audio_files) > 0:
+                audio_filelist_filenames = os.path.join(output_path, f"input_audio_filelist.txt")
+                with open(audio_filelist_filenames, "w") as f:
+                    for audio_file in input_audio_files:
+                        f.write(audio_file + "\n")
+
+            # 将output_duration转换为整数
             output_duration = int(output_duration)
+            # 将output_fps转换为整数
             output_fps = int(output_fps)
-            if len(video_path) == 0 or len(audio_path) == 0:
-                raise ValueError("No videos or audio files found in the folder")
-            video_path.sort()
-            audio_path.sort()
-            video_path = [os.path.join(video_path, f) for f in video_path]
-            audio_path = [os.path.join(audio_path, f) for f in audio_path]
-            for video_path, audio_path in zip(video_path, audio_path):
-                video_path = os.path.join(video_path, f)
-                audio_path = os.path.join(audio_path, f)
-                output_path = os.path.join(output_path, f)
-                output_filename = os.path.join(output_filename, f)
+
+            time_str = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+            output_video_filename = output_filename + "_" + time_str + "." + output_video_format
+            output_video_path = os.path.join(output_path, output_video_filename)
+            if len(input_audio_files) > 0:
+                output_audio_filename = output_filename + "_" + time_str + "." + output_audio_format
+                output_audio_path = os.path.join(output_path, output_audio_filename)
+
+            video_combine_command = f"ffmpeg -f concat -safe 0 -i {video_filelist_filenames} -c copy {output_video_path}"
+            if len(input_audio_files) > 0:
+                audio_combine_command = f"ffmpeg -f concat -safe 0 -i {audio_filelist_filenames} -c copy {output_audio_path}"
+                video_audio_combine_command = f"ffmpeg -i {output_video_path} -i {output_audio_path} -c copy {output_path}/{output_filename}.{output_video_format}"
+
+            result = subprocess.run(video_combine_command, shell=True, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise ValueError(f"Error: {result.stderr}")
+            if len(input_audio_files) > 0:
+                result = subprocess.run(audio_combine_command, shell=True, capture_output=True, text=True)
+                if result.returncode != 0:
+                    raise ValueError(f"Error: {result.stderr}")
+            return (output_video_path,)
         except Exception as e:
             raise ValueError(f"Error: {e}")
         
