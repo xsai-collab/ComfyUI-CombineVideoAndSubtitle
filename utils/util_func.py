@@ -16,9 +16,7 @@ def check_path_is_dir(path):
 # 获取指定路径下的所有文件
 def get_files(path, file_format):
     files = []
-    for file in glob.glob(os.path.join(path, f"*.{file_format}")):
-        files.extend(file)
-
+    files.extend(glob.glob(os.path.join(path, f"*.{file_format}")))
     files.sort()
     return files
 

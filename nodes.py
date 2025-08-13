@@ -4,7 +4,11 @@ import torch
 import subprocess
 import time
 import json
-from utils.util_func import *
+import logging
+from .utils.util_func import *
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class CombineVideosFromFolder:
     def __init__(self):
@@ -33,8 +37,7 @@ class CombineVideosFromFolder:
     
     def combine_videos_from_folder(self, input_video_path, input_audio_path, output_path, input_video_format, input_audio_format, output_filename, output_video_format, output_audio_format):
         try:
-            input_video_path = os.path.abspath(input_video_path).strip()
-            input_audio_path = os.path.abspath(input_audio_path).strip()
+            input_video_path = os.path.abspath(input_video_path).strip()            
 
             # 检查input_video_path是否存在
             if not check_path_exists(input_video_path):
@@ -51,6 +54,7 @@ class CombineVideosFromFolder:
             # 如果用户提供了input_audio_path，则检查input_audio_path是否存在，是否是目录
             input_audio_files = []
             if input_audio_path != "":
+                input_audio_path = os.path.abspath(input_audio_path).strip()
                 if not check_path_exists(input_audio_path):
                     raise ValueError(f"Input audio path does not exist: {input_audio_path}")
                 if not check_path_is_dir(input_audio_path):
@@ -67,13 +71,13 @@ class CombineVideosFromFolder:
             video_filelist_filenames = os.path.join(output_path, f"input_video_filelist.txt")
             with open(video_filelist_filenames, "w") as f:
                 for video_file in input_video_files:
-                    f.write(video_file + "\n")
+                    f.write(f"file '{video_file}'\n")
 
             if len(input_audio_files) > 0:
                 audio_filelist_filenames = os.path.join(output_path, f"input_audio_filelist.txt")
                 with open(audio_filelist_filenames, "w") as f:
                     for audio_file in input_audio_files:
-                        f.write(audio_file + "\n")
+                        f.write(f"file '{audio_file}'\n")
 
             time_str = time.strftime("%Y%m%d_%H%M%S", time.localtime())
             output_video_filename = output_filename + "_" + time_str + "." + output_video_format
@@ -82,20 +86,20 @@ class CombineVideosFromFolder:
                 output_audio_filename = output_filename + "_" + time_str + "." + output_audio_format
                 output_audio_path = os.path.join(output_path, output_audio_filename)
 
-            video_combine_command = f"ffmpeg -f concat -safe 0 -i {video_filelist_filenames} -c copy {output_video_path}"
+            video_combine_command = ["ffmpeg", "-f", "concat", "-safe", "0", "-i", video_filelist_filenames, "-c", "copy", output_video_path]
             if len(input_audio_files) > 0:
-                audio_combine_command = f"ffmpeg -f concat -safe 0 -i {audio_filelist_filenames} -c copy {output_audio_path}"
-                video_audio_combine_command = f"ffmpeg -i {output_video_path} -i {output_audio_path} -c copy {output_path}/{output_filename}_audio_combined.{output_video_format}"
+                audio_combine_command = ["ffmpeg", "-f", "concat", "-safe", "0", "-i", audio_filelist_filenames, "-c", "copy", output_audio_path]
+                video_audio_combine_command = ["ffmpeg", "-i", output_video_path, "-i", output_audio_path, "-c", "copy", output_path, f"{output_filename}_audio_combined.{output_video_format}"]
 
-            result = subprocess.run(video_combine_command, shell=True, capture_output=True, text=True)
+            result = subprocess.run(video_combine_command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
             if result.returncode != 0:
                 raise ValueError(f"Error: {result.stderr}")
             if len(input_audio_files) > 0:
-                result = subprocess.run(audio_combine_command, shell=True, capture_output=True, text=True)
+                result = subprocess.run(audio_combine_command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
                 if result.returncode != 0:
                     raise ValueError(f"Error: {result.stderr}")
                 else:
-                    result = subprocess.run(video_audio_combine_command, shell=True, capture_output=True, text=True)
+                    result = subprocess.run(video_audio_combine_command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
                     if result.returncode != 0:
                         raise ValueError(f"Error: {result.stderr}")
 
