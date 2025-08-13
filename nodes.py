@@ -21,11 +21,7 @@ class CombineVideosFromFolder:
                 "input_audio_format": (["wav", "mp3", "m4a", "flac"], {"default": "wav"}),
                 "output_filename": ("STRING", {"default": "output"}),
                 "output_video_format": (["mp4", "mov", "avi", "mkv"], {"default": "mp4"}),
-                "output_audio_format": (["wav", "mp3", "m4a", "flac"], {"default": "wav"}),
-                "output_duration": ("INT", {"default": 10, "min": 1, "max": 1000}),
-                "output_fps": ("INT", {"default": 30, "min": 1, "max": 100}),
-                "output_quality": ("INT", {"default": 10, "min": 1, "max": 100}),
-                "output_bitrate": ("INT", {"default": 1000, "min": 100, "max": 10000})
+                "output_audio_format": (["wav", "mp3", "m4a", "flac"], {"default": "wav"})
             },
         }
     
@@ -35,7 +31,7 @@ class CombineVideosFromFolder:
     CATEGORY = "Combine Videos And Subtitles"
     OUTPUT_NODE = True
     
-    def combine_videos_from_folder(self, input_video_path, input_audio_path, output_path, input_video_format, input_audio_format, output_filename, output_video_format, output_audio_format, output_duration, output_fps, output_quality, output_bitrate):
+    def combine_videos_from_folder(self, input_video_path, input_audio_path, output_path, input_video_format, input_audio_format, output_filename, output_video_format, output_audio_format):
         try:
             input_video_path = os.path.abspath(input_video_path).strip()
             input_audio_path = os.path.abspath(input_audio_path).strip()
@@ -79,11 +75,6 @@ class CombineVideosFromFolder:
                     for audio_file in input_audio_files:
                         f.write(audio_file + "\n")
 
-            # 将output_duration转换为整数
-            output_duration = int(output_duration)
-            # 将output_fps转换为整数
-            output_fps = int(output_fps)
-
             time_str = time.strftime("%Y%m%d_%H%M%S", time.localtime())
             output_video_filename = output_filename + "_" + time_str + "." + output_video_format
             output_video_path = os.path.join(output_path, output_video_filename)
@@ -94,7 +85,7 @@ class CombineVideosFromFolder:
             video_combine_command = f"ffmpeg -f concat -safe 0 -i {video_filelist_filenames} -c copy {output_video_path}"
             if len(input_audio_files) > 0:
                 audio_combine_command = f"ffmpeg -f concat -safe 0 -i {audio_filelist_filenames} -c copy {output_audio_path}"
-                video_audio_combine_command = f"ffmpeg -i {output_video_path} -i {output_audio_path} -c copy {output_path}/{output_filename}.{output_video_format}"
+                video_audio_combine_command = f"ffmpeg -i {output_video_path} -i {output_audio_path} -c copy {output_path}/{output_filename}_audio_combined.{output_video_format}"
 
             result = subprocess.run(video_combine_command, shell=True, capture_output=True, text=True)
             if result.returncode != 0:
@@ -103,6 +94,11 @@ class CombineVideosFromFolder:
                 result = subprocess.run(audio_combine_command, shell=True, capture_output=True, text=True)
                 if result.returncode != 0:
                     raise ValueError(f"Error: {result.stderr}")
+                else:
+                    result = subprocess.run(video_audio_combine_command, shell=True, capture_output=True, text=True)
+                    if result.returncode != 0:
+                        raise ValueError(f"Error: {result.stderr}")
+
             return (output_video_path,)
         except Exception as e:
             raise ValueError(f"Error: {e}")
