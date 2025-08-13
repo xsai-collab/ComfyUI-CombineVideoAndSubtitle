@@ -13,6 +13,12 @@ def check_path_is_dir(path):
         return False
     return True
 
+# 检查路径是否为文件
+def check_path_is_file(path):
+    if not os.path.isfile(path):
+        return False
+    return True
+
 # 获取指定路径下的所有文件
 def get_files(path, file_format):
     files = []

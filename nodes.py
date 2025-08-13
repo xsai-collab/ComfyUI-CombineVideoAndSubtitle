@@ -108,6 +108,52 @@ class CombineVideosFromFolder:
             raise ValueError(f"Error: {e}")
         
 
+class getSubtitlesFromVideo:
+    def __init__(self):
+        pass
+    
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "input_file_path": ("STRING", ),
+                "fast_whisper_model": ("FASTERWHISPERMODEL", ),
+                "output_path": ("STRING", {"default": ""}),
+                "output_filename": ("STRING", {"default": "output"}),
+                "output_format": (["srt", "ass", "ssa", "sub"], {"default": "srt"})
+            },
+        }
+    
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("output_subtitles_path",)
+    FUNCTION = "get_subtitles_from_video"
+    CATEGORY = "Combine Videos And Subtitles"
+    OUTPUT_NODE = True
+    
+    def get_subtitles_from_video(self, input_file_path, fast_whisper_model, output_path, output_filename, output_format):
+        try:
+            input_file_path = os.path.abspath(input_file_path).strip()
+            if not check_path_exists(input_file_path):
+                raise ValueError(f"Input file path does not exist: {input_file_path}")
+            if not check_path_is_file(input_file_path):
+                raise ValueError(f"Input file path is not a file: {input_file_path}")
+            
+            if fast_whisper_model == "":
+                raise ValueError("Fast Whisper Model is not selected")
+            
+            if output_path == "":
+                raise ValueError("Output path is not selected")
+            
+            if output_filename == "":
+                raise ValueError("Output filename is not selected")
+            
+            if output_format == "":
+                raise ValueError("Output format is not selected")
+            
+            
+        except Exception as e:
+            raise ValueError(f"Error: {e}")
+
 NODE_CLASS_MAPPINGS = {
     "CombineVideosFromFolder": CombineVideosFromFolder
 }
