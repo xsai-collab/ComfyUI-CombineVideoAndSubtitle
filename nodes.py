@@ -25,10 +25,10 @@ class CombineVideosFromFolder:
                 "input_video_path": ("STRING", {"default": ""}),
                 "input_audio_path": ("STRING", {"default": ""}),
                 "output_path": ("STRING", {"default": ""}),
-                "input_video_format": (["mp4", "mov", "avi", "mkv"], {"default": "mp4"}),
+                "input_video_format": (["mp4", "mov", "avi", "mkv", "m4v"], {"default": "mp4"}),
                 "input_audio_format": (["wav", "mp3", "m4a", "flac"], {"default": "wav"}),
                 "output_filename": ("STRING", {"default": "output"}),
-                "output_video_format": (["mp4", "mov", "avi", "mkv"], {"default": "mp4"}),
+                "output_video_format": (["mp4", "mov", "avi", "mkv", "m4v"], {"default": "mp4"}),
                 "output_audio_format": (["wav", "mp3", "m4a", "flac"], {"default": "wav"})
             },
         }
@@ -122,12 +122,12 @@ class getSubtitlesFromVideo:
             "required": {
                 "input_file_path": ("STRING", ),
                 "fast_whisper_model": ("FASTERWHISPERMODEL", ),
-                "language": ("STRING", {"default": "auto"}),
                 "output_path": ("STRING", {"default": ""}),
                 "output_filename": ("STRING", {"default": "output"}),
                 "output_format": (["srt", "ass", "ssa", "sub"], {"default": "srt"})
             },
             "optional": {
+                "language": ("STRING", {"default": "auto"}),
                 "task": (["transcribe", "translate"], {"default": "transcribe"}),
                 "beam_size": ("INT", {"default": 5, "min": 1, "max": 10}),
                 "log_prob_threshold": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 1.0}),
@@ -140,16 +140,16 @@ class getSubtitlesFromVideo:
                 "repetition_penalty": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0}),
                 "no_repeat_ngram_size": ("INT", {"default": 0, "min": 0, "max": 10}),
                 "prefix": ("STRING", {"default": ""}),
-                "suppress_blank": ("BOOLEAN", {"default": False}),
-                "suppress_tokens": ("STRING", {"default": ""}),
-                "max_initial_timestamp": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 10.0}),
+                "suppress_blank": ("BOOLEAN", {"default": True}),
+                "suppress_tokens": ("STRING", {"default": "[-1]"}),
+                "max_initial_timestamp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0}),
                 "word_timestamps": ("BOOLEAN", {"default": False}),
-                "prepend_punctuations": ("STRING", {"default": "word"}),
-                "append_punctuations": ("STRING", {"default": "word"}),
+                "prepend_punctuations": ("STRING", {"default": "\"'“¿([{-"}),
+                "append_punctuations": ("STRING", {"default": "\"'.。,，!！?？:：”)]}、"}),
                 "max_new_tokens": ("INT", {"default": -999, "min": -1000, "max": 10000}),
                 "chunk_length": ("INT", {"default": -999, "min": -1000, "max": 10000}),
                 "hallucination_silence_threshold": ("FLOAT", {"default": -999.0, "min": -1000.0, "max": 1000.0}),
-                "hotwords": ("STRING", {"default": "word"}),
+                "hotwords": ("STRING", {"default": ""}),
                 "language_detection_threshold": ("FLOAT", {"default": -999.0, "min": -1000.0, "max": 1000.0}),
                 "language_detection_segments": ("INT", {"default": 1, "min": 1, "max": 100}),
                 "prompt_reset_on_temperature": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0}),
@@ -158,7 +158,7 @@ class getSubtitlesFromVideo:
                 "without_timestamps": ("BOOLEAN", {"default": False}),
                 "vad_filter": ("BOOLEAN", {"default": False}),
                 "vad_parameters": ("STRING", {"default": ""}),
-                "clip_timestamp": ("STRING", {"default": ""}),
+                "clip_timestamps": ("STRING", {"default": "0"}),
             }
         }
     
@@ -168,7 +168,7 @@ class getSubtitlesFromVideo:
     CATEGORY = "Combine Videos And Subtitles"
     OUTPUT_NODE = True
     
-    def get_subtitles_from_video(self, input_file_path, fast_whisper_model:faster_whisper.WhisperModel, language, output_path, output_filename, output_format, **params, ) -> Tuple[List]:
+    def get_subtitles_from_video(self, input_file_path, fast_whisper_model:faster_whisper.WhisperModel, output_path, output_filename, output_format, **params, ) -> Tuple[List]:
         params = self.collect_params(params)
         try:
             input_file_path = os.path.abspath(input_file_path).strip()
@@ -186,16 +186,17 @@ class getSubtitlesFromVideo:
             if output_format == "":
                 raise ValueError("Output format is not selected")
             
-            if check_path_is_dir(output_path):
-                raise ValueError(f"Output path is a directory: {output_path}")
+            if check_path_is_file(output_path):
+                raise ValueError(f"Output path is a file: {output_path}")
             
             if not check_path_exists(output_path):
                 os.makedirs(output_path)
             
             output_file_path = os.path.join(output_path, f"{output_filename}.{output_format}")
 
+            logger.info(f"params: {params}")
             # 使用fast_whisper_model进行语音识别
-            segments, info = fast_whisper_model.transcribe(input_file_path, language=language, **params)
+            segments, info = fast_whisper_model.transcribe(input_file_path, **params)
 
             # 创建进度条
             comfy_pbar = ProgressBar(info.duration)
@@ -219,6 +220,8 @@ class getSubtitlesFromVideo:
     
     @staticmethod
     def collect_params(params):
+        if "language" in params and params["language"] == "auto":
+            params["language"] = None
         if "suppress_tokens" in params:
             params["suppress_tokens"] = eval(params["suppress_tokens"])
         if "prefix" in params and not params["prefix"]:
