@@ -249,13 +249,91 @@ class getSubtitlesFromVideo:
             raise ValueError(f"Invalid output format: {output_format}")
 
 
+class mergeVideoAndSubtitle:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "input_video_filepath": ("STRING", ),
+                "input_subtitle_filepath": ("STRING", ),
+                "output_filepath": ("STRING", ),
+                "output_filename": ("STRING", ),
+                "output_format": (["mp4", "mov", "avi", "mkv", "m4v"], {"default": "mp4"})
+            },
+        }
+    
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("output_video_path",)
+    FUNCTION = "merge_video_and_subtitle"
+    CATEGORY = "Combine Videos And Subtitles"
+    OUTPUT_NODE = True
+    
+    def merge_video_and_subtitle(self, input_video_filepath, input_subtitle_filepath, output_filepath, output_filename, output_format):
+        try:
+            input_video_filepath = os.path.abspath(input_video_filepath).strip()
+            if not check_path_exists(input_video_filepath):
+                raise ValueError(f"Input video path does not exist: {input_video_filepath}")
+            if not check_path_is_file(input_video_filepath):
+                raise ValueError(f"Input video path is not a file: {input_video_filepath}")
+            
+            input_subtitle_filepath = os.path.abspath(input_subtitle_filepath).strip()
+            if not check_path_exists(input_subtitle_filepath):
+                raise ValueError(f"Input subtitle path does not exist: {input_subtitle_filepath}")
+            if not check_path_is_file(input_subtitle_filepath):
+                raise ValueError(f"Input subtitle path is not a file: {input_subtitle_filepath}")
+            
+            if output_filepath == "":
+                raise ValueError("Output path is not inputed")
+            
+            if output_filename == "":
+                raise ValueError("Output filename is not inputed")
+            
+            if output_format == "":
+                raise ValueError("Output format is not selected")
+            
+            if check_path_is_file(output_filepath):
+                raise ValueError(f"Output path is a file: {output_filepath}")
+            
+            if not check_path_exists(output_filepath):
+                os.makedirs(output_filepath)
+
+            output_video_filepath = os.path.join(output_filepath, f"{output_filename}.{output_format}")
+
+            if output_format == "mp4":
+                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
+            elif output_format == "mov":
+                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
+            elif output_format == "avi":
+                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
+            elif output_format == "mkv":
+                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
+            elif output_format == "m4v":
+                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
+            else:
+                raise ValueError(f"Invalid output format: {output_format}")
+
+            result = subprocess.run(merge_video_and_subtitle_command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
+            if result.returncode != 0:
+                raise ValueError(f"Error: {result.stderr}")
+
+            return (output_video_filepath,)
+        except Exception as e:
+            raise ValueError(f"Error: {e}")
+
+
+
 NODE_CLASS_MAPPINGS = {
     "CombineVideosFromFolder": CombineVideosFromFolder,
-    "getSubtitlesFromVideo": getSubtitlesFromVideo
+    "getSubtitlesFromVideo": getSubtitlesFromVideo,
+    "mergeVideoAndSubtitle": mergeVideoAndSubtitle
 }
 
 # A dictionary that contains the friendly/humanly readable titles for the nodes
 NODE_DISPLAY_NAME_MAPPINGS = {
     "CombineVideosFromFolder": "Combine Videos From Folder",
-    "getSubtitlesFromVideo": "Get Subtitles From Video"
+    "getSubtitlesFromVideo": "Get Subtitles From Video",
+    "mergeVideoAndSubtitle": "Merge Video And Subtitle"
 }
