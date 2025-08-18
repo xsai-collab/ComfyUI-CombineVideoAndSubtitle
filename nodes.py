@@ -6,6 +6,7 @@ import time
 import json
 import logging
 import faster_whisper
+import folder_paths
 
 from .utils.util_func import *
 from typing import List, Tuple
@@ -13,6 +14,10 @@ from comfy.utils import ProgressBar
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+models_path = folder_paths.models_dir
+input_path = folder_paths.get_input_directory()
+output_path = folder_paths.get_output_directory()
 
 class CombineVideosFromFolder:
     def __init__(self):
@@ -114,52 +119,26 @@ class CombineVideosFromFolder:
 
 class getSubtitlesFromVideo:
     def __init__(self):
-        pass
+        self.faster_whisper_model_dir = os.path.join(models_path, "faster-whisper")
+        whisper_models = list(model for model in faster_whisper.available_models())
+        self.whisper_models = whisper_models
+
+        language_list = list(language for language in faster_whisper.WhisperModel.supported_languages())
+        self.language_list = language_list.append("auto")
     
     @classmethod
     def INPUT_TYPES(cls):
         return {
             "required": {
                 "input_file_path": ("STRING", ),
-                "fast_whisper_model": ("FASTERWHISPERMODEL", ),
+                "whisper_model": (cls.whisper_models, ),
+                "device": (["cpu", "cuda", "auto"], {"default": "auto"}),
+                "language": (cls.language_list, ),
+                "task": (["transcribe", "translate"], {"default": "transcribe"}),
                 "output_path": ("STRING", {"default": ""}),
                 "output_filename": ("STRING", {"default": "output"}),
-                "output_format": (["srt", "ass", "ssa", "sub"], {"default": "srt"})
+                "output_format": (["srt", "vtt"], {"default": "srt"})
             },
-            "optional": {
-                "language": ("STRING", {"default": "auto"}),
-                "task": (["transcribe", "translate"], {"default": "transcribe"}),
-                "beam_size": ("INT", {"default": 5, "min": 1, "max": 10}),
-                "log_prob_threshold": ("FLOAT", {"default": -1.0, "min": -1.0, "max": 1.0}),
-                "no_speech_threshold": ("FLOAT", {"default": 0.6, "min": 0.0, "max": 1.0}),
-                "best_of": ("INT", {"default": 1, "min": 1, "max": 10}),
-                "patience": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0}),
-                "temperature": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0}),
-                "compression_ratio_threshold": ("FLOAT", {"default": 2.0, "min": 0.0, "max": 10.0}),
-                "length_penalty": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0}),
-                "repetition_penalty": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0}),
-                "no_repeat_ngram_size": ("INT", {"default": 0, "min": 0, "max": 10}),
-                "prefix": ("STRING", {"default": ""}),
-                "suppress_blank": ("BOOLEAN", {"default": True}),
-                "suppress_tokens": ("STRING", {"default": "[-1]"}),
-                "max_initial_timestamp": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0}),
-                "word_timestamps": ("BOOLEAN", {"default": False}),
-                "prepend_punctuations": ("STRING", {"default": "\"'“¿([{-"}),
-                "append_punctuations": ("STRING", {"default": "\"'.。,，!！?？:：”)]}、"}),
-                "max_new_tokens": ("INT", {"default": -999, "min": -1000, "max": 10000}),
-                "chunk_length": ("INT", {"default": -999, "min": -1000, "max": 10000}),
-                "hallucination_silence_threshold": ("FLOAT", {"default": -999.0, "min": -1000.0, "max": 1000.0}),
-                "hotwords": ("STRING", {"default": ""}),
-                "language_detection_threshold": ("FLOAT", {"default": -999.0, "min": -1000.0, "max": 1000.0}),
-                "language_detection_segments": ("INT", {"default": 1, "min": 1, "max": 100}),
-                "prompt_reset_on_temperature": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 1.0}),
-                "condition_on_previous_text": ("BOOLEAN", {"default": True}),
-                "initial_prompt": ("STRING", {"default": ""}),
-                "without_timestamps": ("BOOLEAN", {"default": False}),
-                "vad_filter": ("BOOLEAN", {"default": False}),
-                "vad_parameters": ("STRING", {"default": ""}),
-                "clip_timestamps": ("STRING", {"default": "0"}),
-            }
         }
     
     RETURN_TYPES = ("STRING",)
@@ -168,8 +147,7 @@ class getSubtitlesFromVideo:
     CATEGORY = "Combine Videos And Subtitles"
     OUTPUT_NODE = True
     
-    def get_subtitles_from_video(self, input_file_path, fast_whisper_model:faster_whisper.WhisperModel, output_path, output_filename, output_format, **params, ) -> Tuple[List]:
-        params = self.collect_params(params)
+    def get_subtitles_from_video(self, input_file_path, whisper_model, device, language, task, output_path, output_filename, output_format) -> Tuple[List]:
         try:
             input_file_path = os.path.abspath(input_file_path).strip()
             if not check_path_exists(input_file_path):
@@ -194,9 +172,13 @@ class getSubtitlesFromVideo:
             
             output_file_path = os.path.join(output_path, f"{output_filename}.{output_format}")
 
-            logger.info(f"params: {params}")
+            if language == "auto":
+                language = None
+
+            fast_whisper_model = self.loadAndDowndModels(whisper_model, device, self.faster_whisper_model_dir)
+
             # 使用fast_whisper_model进行语音识别
-            segments, info = fast_whisper_model.transcribe(input_file_path, **params)
+            segments, info = fast_whisper_model.transcribe(input_file_path, language=language, task=task)
 
             # 创建进度条
             comfy_pbar = ProgressBar(info.duration)
@@ -212,6 +194,7 @@ class getSubtitlesFromVideo:
                 })
 
             # 将识别结果写入文件
+            self.writeSubtitlesToFile(transcriptions, output_file_path, output_format)
 
             return (output_file_path,)
 
@@ -219,28 +202,52 @@ class getSubtitlesFromVideo:
             raise ValueError(f"Error: {e}")
     
     @staticmethod
-    def collect_params(params):
-        if "language" in params and params["language"] == "auto":
-            params["language"] = None
-        if "suppress_tokens" in params:
-            params["suppress_tokens"] = eval(params["suppress_tokens"])
-        if "prefix" in params and not params["prefix"]:
-            params["prefix"] = None
-        if "hotwords" in params and not params["hotwords"]:
-            params["hotwords"] = None
-        if "initial_prompt" in params and not params["initial_prompt"]:
-            params["initial_prompt"] = None
-        if "vad_parameters" in params and not params["vad_parameters"]:
-            params["vad_parameters"] = None
-        if "max_new_tokens" in params and params["max_new_tokens"] == -999:
-            params["max_new_tokens"] = None
-        if "chunk_length" in params and params["chunk_length"] == -999:
-            params["chunk_length"] = None
-        if "hallucination_silence_threshold" in params and params["hallucination_silence_threshold"] == -999.0:
-            params["hallucination_silence_threshold"] = None
-        if "language_detection_threshold" in params and params["language_detection_threshold"] == -999.0:
-            params["language_detection_threshold"] = None
-        return params
+    def loadAndDowndModels(whisper_model, device, download_root) -> faster_whisper.WhisperModel:
+        if not check_path_exists(download_root):
+            os.makedirs(download_root)
+        fast_whisper_model = faster_whisper.WhisperModel(
+            model_size_or_path=whisper_model,
+            device=device,
+            download_root=download_root,
+            local_files_only=False
+        )
+        return fast_whisper_model
+    
+    @staticmethod
+    def writeSubtitlesToFile(self, subtitles, output_file_path, output_format):
+        subtitle_text = ""
+        if output_format == "srt":
+            start_text = ""
+        elif output_format == "vtt":
+            start_text = "WEBVTT\n\n"
+
+        subtitle_text += start_text
+
+        for i, subtitle in enumerate(subtitles):
+            start_time = self.format_time(subtitle["start"], output_format)
+            end_time = self.format_time(subtitle["end"], output_format)
+            text = subtitle["text"].strip()
+
+            subtitle_text += f"{i+1}\n"
+            subtitle_text += f"{start_time} --> {end_time}\n"
+            subtitle_text += f"{text}\n\n"
+            
+        with open(output_file_path, "w", encoding="utf-8") as f:
+            f.write(subtitle_text)
+
+    @staticmethod
+    def format_time(time, output_format):
+        hours = int(time // 3600)
+        minutes = int((time % 3600) // 60)
+        seconds = int(time % 60)
+        milliseconds = int((time - int(time)) * 1000)
+        if output_format == "srt":
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
+        elif output_format == "vtt":
+            return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
+        else:
+            raise ValueError(f"Invalid output format: {output_format}")
+
 
 NODE_CLASS_MAPPINGS = {
     "CombineVideosFromFolder": CombineVideosFromFolder,
