@@ -1,17 +1,18 @@
 import os
-import sys
-import torch
 import subprocess
 import time
-import json
 import logging
 import faster_whisper
 import folder_paths
+import shutil
 
 from .utils.util_func import *
 from typing import List, Tuple
 from comfy.utils import ProgressBar
 
+os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
+
+# 设置logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -20,11 +21,23 @@ input_path = folder_paths.get_input_directory()
 output_path = folder_paths.get_output_directory()
 
 class CombineVideosFromFolder:
-    def __init__(self):
-        pass
+    '''
+    从文件夹中合并视频，支持合并该文件夹下所有指定的相同类型的视频和音频合成为视频，并输出到指定目录
+    参数：
+    input_video_path: 输入视频文件夹路径
+    input_audio_path: 输入音频文件夹路径
+    output_path: 输出文件夹路径
+    input_video_format: 输入视频格式，支持mp4、mov、avi、mkv、m4v
+    input_audio_format: 输入音频格式，支持wav、mp3、m4a、flac
+    output_filename: 输出文件名，不包含后缀
+    output_video_format: 输出视频格式，支持mp4、mov、avi、mkv、m4v
+    output_audio_format: 输出音频格式，支持wav、mp3、m4a、flac
+    返回值：
+    output_video_path: 输出视频文件路径
+    '''
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(self):
         return {
             "required": {
                 "input_video_path": ("STRING", {"default": ""}),
@@ -32,7 +45,7 @@ class CombineVideosFromFolder:
                 "output_path": ("STRING", {"default": ""}),
                 "input_video_format": (["mp4", "mov", "avi", "mkv", "m4v"], {"default": "mp4"}),
                 "input_audio_format": (["wav", "mp3", "m4a", "flac"], {"default": "wav"}),
-                "output_filename": ("STRING", {"default": "output"}),
+                "output_filename": ("STRING", {"default": "output_video"}),
                 "output_video_format": (["mp4", "mov", "avi", "mkv", "m4v"], {"default": "mp4"}),
                 "output_audio_format": (["wav", "mp3", "m4a", "flac"], {"default": "wav"})
             },
@@ -117,26 +130,41 @@ class CombineVideosFromFolder:
             raise ValueError(f"Error: {e}")
         
 
-class getSubtitlesFromVideo:
-    def __init__(self):
+class GetSubtitlesFromVideo:
+    '''
+    从视频中获取字幕，使用开源模型faster-whisper识别语音语言，并将语音转换为指定语言的字幕保存到指定文件夹，仅支持.srt和.vtt两种格式
+    参数：
+    input_file_path: 输入视频文件路径
+    whisper_model: 使用的whisper模型，模型存放地址models/faster-whisper，运行节点会自动下载模型，模型下载地址为：https://huggingface.co/Systran
+    device: 使用的设备，支持cpu、cuda、auto
+    language: 转录的语言，auto为自动检测的原语言
+    task: 转录的任务，支持transcribe和translate
+    output_path: 输出文件夹路径
+    output_filename: 输出文件名，不包含后缀
+    output_format: 输出格式，支持srt和vtt
+    返回值：
+    output_subtitles_path: 输出字幕文件路径
+    '''
+    
+    @classmethod
+    def INPUT_TYPES(self):
         self.faster_whisper_model_dir = os.path.join(models_path, "faster-whisper")
         whisper_models = list(model for model in faster_whisper.available_models())
         self.whisper_models = whisper_models
 
-        language_list = list(language for language in faster_whisper.WhisperModel.supported_languages())
-        self.language_list = language_list.append("auto")
-    
-    @classmethod
-    def INPUT_TYPES(cls):
+        language_list = list(language for language in faster_whisper.tokenizer._LANGUAGE_CODES)
+        language_list.append("auto")
+        self.language_list = language_list
+
         return {
             "required": {
-                "input_file_path": ("STRING", ),
-                "whisper_model": (cls.whisper_models, ),
+                "input_file_path": ("STRING", {"default": ""}),
+                "whisper_model": (self.whisper_models, {"default": "large-v3"}),
                 "device": (["cpu", "cuda", "auto"], {"default": "auto"}),
-                "language": (cls.language_list, ),
+                "language": (self.language_list, {"default": "auto"}),
                 "task": (["transcribe", "translate"], {"default": "transcribe"}),
                 "output_path": ("STRING", {"default": ""}),
-                "output_filename": ("STRING", {"default": "output"}),
+                "output_filename": ("STRING", {"default": "output_subtitles"}),
                 "output_format": (["srt", "vtt"], {"default": "srt"})
             },
         }
@@ -170,12 +198,13 @@ class getSubtitlesFromVideo:
             if not check_path_exists(output_path):
                 os.makedirs(output_path)
             
-            output_file_path = os.path.join(output_path, f"{output_filename}.{output_format}")
+            time_str = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+            output_file_path = os.path.join(output_path, f"{output_filename}_{time_str}.{output_format}")
 
             if language == "auto":
                 language = None
 
-            fast_whisper_model = self.loadAndDowndModels(whisper_model, device, self.faster_whisper_model_dir)
+            fast_whisper_model = loadAndDownloadModels(whisper_model, device, self.faster_whisper_model_dir)
 
             # 使用fast_whisper_model进行语音识别
             segments, info = fast_whisper_model.transcribe(input_file_path, language=language, task=task)
@@ -194,73 +223,35 @@ class getSubtitlesFromVideo:
                 })
 
             # 将识别结果写入文件
-            self.writeSubtitlesToFile(transcriptions, output_file_path, output_format)
+            writeSubtitlesToFile(transcriptions, output_file_path, output_format)
 
             return (output_file_path,)
 
         except Exception as e:
             raise ValueError(f"Error: {e}")
-    
-    @staticmethod
-    def loadAndDowndModels(whisper_model, device, download_root) -> faster_whisper.WhisperModel:
-        if not check_path_exists(download_root):
-            os.makedirs(download_root)
-        fast_whisper_model = faster_whisper.WhisperModel(
-            model_size_or_path=whisper_model,
-            device=device,
-            download_root=download_root,
-            local_files_only=False
-        )
-        return fast_whisper_model
-    
-    @staticmethod
-    def writeSubtitlesToFile(self, subtitles, output_file_path, output_format):
-        subtitle_text = ""
-        if output_format == "srt":
-            start_text = ""
-        elif output_format == "vtt":
-            start_text = "WEBVTT\n\n"
-
-        subtitle_text += start_text
-
-        for i, subtitle in enumerate(subtitles):
-            start_time = self.format_time(subtitle["start"], output_format)
-            end_time = self.format_time(subtitle["end"], output_format)
-            text = subtitle["text"].strip()
-
-            subtitle_text += f"{i+1}\n"
-            subtitle_text += f"{start_time} --> {end_time}\n"
-            subtitle_text += f"{text}\n\n"
-            
-        with open(output_file_path, "w", encoding="utf-8") as f:
-            f.write(subtitle_text)
-
-    @staticmethod
-    def format_time(time, output_format):
-        hours = int(time // 3600)
-        minutes = int((time % 3600) // 60)
-        seconds = int(time % 60)
-        milliseconds = int((time - int(time)) * 1000)
-        if output_format == "srt":
-            return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
-        elif output_format == "vtt":
-            return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{milliseconds:03d}"
-        else:
-            raise ValueError(f"Invalid output format: {output_format}")
 
 
-class mergeVideoAndSubtitle:
-    def __init__(self):
-        pass
+class MergeVideoAndSubtitle:
+    '''
+    合并视频和字幕，将字幕显示到视频中，使用ffmpeg将字幕显示到视频中，仅支持.srt和.vtt两种格式
+    参数：
+    input_video_filepath: 输入视频文件路径
+    input_subtitle_filepath: 输入字幕文件路径
+    output_filepath: 输出文件夹路径
+    output_filename: 输出文件名，不包含后缀
+    output_format: 输出格式，支持mp4、mov、avi、mkv、m4v
+    返回值：
+    output_video_path: 输出视频文件路径
+    '''
 
     @classmethod
-    def INPUT_TYPES(cls):
+    def INPUT_TYPES(self):
         return {
             "required": {
-                "input_video_filepath": ("STRING", ),
-                "input_subtitle_filepath": ("STRING", ),
-                "output_filepath": ("STRING", ),
-                "output_filename": ("STRING", ),
+                "input_video_filepath": ("STRING", {"default": ""}),
+                "input_subtitle_filepath": ("STRING", {"default": ""}),
+                "output_filepath": ("STRING", {"default": ""}),
+                "output_filename": ("STRING", {"default": "output_combined"}),
                 "output_format": (["mp4", "mov", "avi", "mkv", "m4v"], {"default": "mp4"})
             },
         }
@@ -300,24 +291,33 @@ class mergeVideoAndSubtitle:
             if not check_path_exists(output_filepath):
                 os.makedirs(output_filepath)
 
-            output_video_filepath = os.path.join(output_filepath, f"{output_filename}.{output_format}")
+            time_str = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+            output_video_filepath = os.path.join(output_filepath, f"{output_filename}_{time_str}.{output_format}")
 
-            if output_format == "mp4":
-                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
-            elif output_format == "mov":
-                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
-            elif output_format == "avi":
-                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
-            elif output_format == "mkv":
-                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
-            elif output_format == "m4v":
-                merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-i", input_subtitle_filepath, "-c:v", "copy", "-c:a", "aac", "-c:s", "srt", "-shortest", output_video_filepath]
-            else:
-                raise ValueError(f"Invalid output format: {output_format}")
+            # 使用更可靠的字幕合并方法 - 避免路径解析问题
+            # 将字幕文件复制到输出目录，使用相对路径
+            temp_subtitle_path = os.path.join(output_filepath, "temp_subtitle.srt")
+            shutil.copy2(input_subtitle_filepath, temp_subtitle_path)
 
+            # 使用相对路径，避免Windows路径解析问题
+            subtitle_filter = "subtitles=temp_subtitle.srt"
+            merge_video_and_subtitle_command = ["ffmpeg", "-i", input_video_filepath, "-vf", subtitle_filter, "-c:a", "copy", output_video_filepath]
+
+            # 切换到输出目录执行命令
+            original_cwd = os.getcwd()
+            os.chdir(output_filepath)
+
+            # 执行命令...
             result = subprocess.run(merge_video_and_subtitle_command, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
             if result.returncode != 0:
                 raise ValueError(f"Error: {result.stderr}")
+
+            # 恢复原始工作目录
+            os.chdir(original_cwd)
+
+            # 清理临时字幕文件
+            if os.path.exists(temp_subtitle_path):
+                os.remove(temp_subtitle_path)
 
             return (output_video_filepath,)
         except Exception as e:
@@ -327,13 +327,13 @@ class mergeVideoAndSubtitle:
 
 NODE_CLASS_MAPPINGS = {
     "CombineVideosFromFolder": CombineVideosFromFolder,
-    "getSubtitlesFromVideo": getSubtitlesFromVideo,
-    "mergeVideoAndSubtitle": mergeVideoAndSubtitle
+    "GetSubtitlesFromVideo": GetSubtitlesFromVideo,
+    "MergeVideoAndSubtitle": MergeVideoAndSubtitle
 }
 
 # A dictionary that contains the friendly/humanly readable titles for the nodes
 NODE_DISPLAY_NAME_MAPPINGS = {
     "CombineVideosFromFolder": "Combine Videos From Folder",
-    "getSubtitlesFromVideo": "Get Subtitles From Video",
-    "mergeVideoAndSubtitle": "Merge Video And Subtitle"
+    "GetSubtitlesFromVideo": "Get Subtitles From Video",
+    "MergeVideoAndSubtitle": "Merge Video And Subtitle"
 }
